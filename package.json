@@ -1,0 +1,45 @@
+{
+  "name": "free-command-bin",
+  "version": "0.1.0",
+  "description": "Freely assembled command bin",
+  "main": "build/index.js",
+  "scripts": {
+    "build": "rimraf -rf ./build && tsc && cp -rf src/typings types/"
+  },
+  "types": "./types/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NuoHui/free-command-bin.git"
+  },
+  "keywords": ["Command", "CLI"],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/NuoHui/free-command-bin/issues"
+  },
+  "homepage": "https://github.com/NuoHui/free-command-bin#readme",
+  "engines": {
+    "node": ">= 8.0.0"
+  },
+  "files": [
+    "types",
+    "build",
+    "LICENSE",
+    "CHANGELOG.md",
+    "package.json",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@types/node": "^17.0.25",
+    "@typescript-eslint/eslint-plugin": "^5.20.0",
+    "@typescript-eslint/parser": "^5.20.0",
+    "eslint": "^8.13.0",
+    "rimraf": "^3.0.2",
+    "ts-node": "^10.7.0",
+    "typescript": "^4.6.3"
+  },
+  "dependencies": {
+    "debug": "^4.3.4",
+    "yargs": "^17.4.1"
+  }
+}
