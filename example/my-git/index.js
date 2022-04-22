@@ -1,5 +1,5 @@
 const path = require('path');
-const Command = require('../../src/index');
+const Command = require('../../build/index');
 
 class MyGitCommand extends Command {
   constructor(rowArgv) {
@@ -9,3 +9,5 @@ class MyGitCommand extends Command {
     this.load(path.join(__dirname, 'command'));
   }
 }
+
+module.exports = MyGitCommand;
