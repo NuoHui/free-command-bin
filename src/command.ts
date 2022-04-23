@@ -157,7 +157,6 @@ class CommandBin {
     assert(this.commands.has(name), `${name} should be added first`);
     debug('[%s] set `%s` as alias of `%s`', this.constructor.name, alias, name);
     this.commands.set(alias, this.commands.get(name));
-    console.log('xyz', this.commands);
   }
 
   /**
