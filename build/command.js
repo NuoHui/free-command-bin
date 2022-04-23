@@ -8,16 +8,17 @@ const debug = require('debug')('free-command-bin');
 const yargs = require('yargs');
 const assert = require('assert');
 const chalk = require('chalk');
+const changeCase = require('change-case');
 const fs = require('fs');
 const helper = require('./helper');
+;
 class CommandBin {
     constructor(rawArgv) {
         this.commandVersion = '';
         this.rawArgv = rawArgv || process.argv.slice(2);
         debug('[%s] origin argument `%s`', this.constructor.name, this.rawArgv.join(' '));
         this.yargs = yargs(this.rawArgv);
-        this.parseOptions = {
-            execArgv: false,
+        this.parserOptions = {
             removeAlias: false,
             removeCamelCase: false,
         };
@@ -47,6 +48,26 @@ class CommandBin {
             env: Object.assign({}, process.env),
             rawArgv: this.rawArgv
         };
+        argv.help = undefined;
+        argv.h = undefined;
+        argv.version = undefined;
+        argv.v = undefined;
+        if (this.parserOptions.removeAlias) {
+            const alias = this.yargs.getOptions().alias;
+            for (const key of Object.keys(alias)) {
+                alias[key].forEach((item) => {
+                    argv[item] = undefined;
+                });
+            }
+        }
+        ;
+        if (this.parserOptions.removeCamelCase) {
+            for (const key of Object.keys(argv)) {
+                if (key.includes('-')) {
+                    argv[changeCase.camel(key)] = undefined;
+                }
+            }
+        }
         return context;
     }
     load(fullPath) {
@@ -85,7 +106,7 @@ class CommandBin {
         assert(this.commands.has(name), `${name} should be added first`);
         debug('[%s] set `%s` as alias of `%s`', this.constructor.name, alias, name);
         this.commands.set(alias, this.commands.get(name));
-        console.log('alias', this.commands);
+        console.log('xyz', this.commands);
     }
     add(commandName, target) {
         assert(commandName, `${commandName} is required`);
@@ -100,7 +121,6 @@ class CommandBin {
         }
         ;
         this.commands.set(commandName, target);
-        console.log('add', this.commands);
     }
     errorHandler(err) {
         console.error(chalk.red(`⚠️  ${err.name}: ${err.message}`));
@@ -110,17 +130,19 @@ class CommandBin {
         process.exit(1);
     }
     async dispatch() {
+        var _a;
         this.yargs
             .completion()
             .help()
             .version()
-            .wrap(20)
+            .wrap(120)
             .alias('h', 'help')
             .alias('v', 'version')
             .group(['help', 'version'], 'Global Options:');
         const parsed = await this.parse(this.rawArgv);
         const commandName = parsed._[0];
         if (parsed.version && this.version) {
+            console.log(this.version);
             return;
         }
         ;
@@ -128,14 +150,13 @@ class CommandBin {
             const Command = this.commands.get(commandName);
             const rawArgv = this.rawArgv.slice();
             rawArgv.splice(rawArgv.indexOf(commandName), 1);
-            console.log('Command', Command, rawArgv);
             debug('[%s] dispatch to subcommand `%s` -> `%s` with %j', this.constructor.name, commandName, Command.name, rawArgv);
             const command = this.getSubCommandInstance(Command, rawArgv);
             await command.dispatch();
             return;
         }
         for (const [name, Command] of this.commands.entries()) {
-            this.yargs.command(name, Command.prototype.description || '');
+            this.yargs.command(name, ((_a = Command.prototype) === null || _a === void 0 ? void 0 : _a.description) || '');
         }
         debug('[%s] exec run command', this.constructor.name);
         const context = this.context;

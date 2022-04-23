@@ -4,40 +4,44 @@ const debug = require('debug')('free-command-bin');
 const yargs = require('yargs');
 const assert = require('assert');
 const chalk = require('chalk');
+const changeCase = require('change-case');
 const fs = require('fs');
 const helper = require('./helper');
 
-interface IParseOptions {
-  execArgv: boolean;
+interface IParserOptions {
   removeAlias: boolean;
   removeCamelCase: false;
-}
+};
 
 class CommandBin {
   private rawArgv: string[];
   private yargs;
-  private parseOptions: IParseOptions;
-  private commands: any;
+  private parserOptions: IParserOptions;
+  private commands: Map<string, CommandBin | undefined>;
   private helper: any;
   private commandVersion: string = '';
   constructor(rawArgv: string[]) {
-    // 获取有效的命令行参数，给yargs使用
+    // 保存原始的命名行参数
     this.rawArgv = rawArgv || process.argv.slice(2);
     debug('[%s] origin argument `%s`', this.constructor.name, this.rawArgv.join(' '));
     
+    // 创建yargs
     this.yargs = yargs(this.rawArgv);
   
-    this.parseOptions = {
-      execArgv: false,
+    this.parserOptions = {
+      // 从yargs argv 移除alias
       removeAlias: false,
+      // 从yargs argv 移除 camel case
       removeCamelCase: false,
     };
+
     this.helper = helper;
+    
     this.commands = new Map();
   }
 
   /**
-   * 输出the usage data.
+   * 使用标准输出打印the usage data.
    * @param level consoleLevel
    */
   private showHelp(level = 'log') {
@@ -72,15 +76,39 @@ class CommandBin {
       env: Object.assign({}, process.env),
       rawArgv: this.rawArgv
     };
+
+    argv.help = undefined;
+    argv.h = undefined;
+    argv.version = undefined;
+    argv.v = undefined;
+
+    if (this.parserOptions.removeAlias) {
+      const alias = this.yargs.getOptions().alias;
+      for (const key of Object.keys(alias)) {
+        alias[key].forEach((item: any) => {
+          argv[item] = undefined;
+        })
+      }
+    };
+
+    // remove camel case result
+    if (this.parserOptions.removeCamelCase) {
+      for (const key of Object.keys(argv)) {
+        if (key.includes('-')) {
+          argv[changeCase.camel(key)] = undefined;
+        }
+      }
+    }
+
     return context;
   }
 
   /**
-   * 加载文件夹下的子模块
+   * 加载子模块
    * @param fullPath 文件夹路径
    */
   public load (fullPath: string) {
-    // 检查文件是否存在 && 是目录
+    // 检查fullPath是否存在 && 是目录
     assert(fs.existsSync(fullPath) && fs.statSync(fullPath).isDirectory(), `${fullPath} should exist and be a directory`);
 
     // 文件夹下文件、空文件夹即为空数组
@@ -99,6 +127,9 @@ class CommandBin {
     debug('[%s] loaded command `%s` from directory `%s`', this.constructor.name, names, fullPath);
   }
 
+  /**
+   * bin process的入口
+   */
   public async start() {
     try {
       const index = this.rawArgv.indexOf('--get-yargs-completions');
@@ -126,7 +157,7 @@ class CommandBin {
     assert(this.commands.has(name), `${name} should be added first`);
     debug('[%s] set `%s` as alias of `%s`', this.constructor.name, alias, name);
     this.commands.set(alias, this.commands.get(name));
-    console.log('alias', this.commands);
+    console.log('xyz', this.commands);
   }
 
   /**
@@ -134,7 +165,7 @@ class CommandBin {
    * @param commandName a command name
    * @param target special file path (must contains ext) or CommandBin Class
    */
-  private add(commandName: string, target: string) {
+  private add(commandName: string, target: string | CommandBin) {
     assert(commandName, `${commandName} is required`);
     if (typeof target === 'string') {
       // target is file
@@ -148,11 +179,14 @@ class CommandBin {
         target = target.default;
       };
     };
-    // 添加命名的映射
-    this.commands.set(commandName, target);
-    console.log('add', this.commands);
+    // 添加command的映射
+    this.commands.set(commandName, target as CommandBin);
   }
 
+  /**
+   * 默认错误处理
+   * @param err {Error} err - error object
+   */
   private errorHandler(err: Error) {
     console.error(chalk.red(`⚠️  ${err.name}: ${err.message}`));
     console.error(chalk.red('⚠️  Command Error, enable `DEBUG=common-bin` for detail'));
@@ -167,7 +201,7 @@ class CommandBin {
       .completion()
       .help()
       .version()
-      .wrap(20)
+      .wrap(120)
       .alias('h', 'help')
       .alias('v', 'version')
       .group(['help', 'version'], 'Global Options:');
@@ -176,6 +210,7 @@ class CommandBin {
     // example parsed { _: [ 'remote' ], '$0': 'bin/my-git.js' }
     const commandName = parsed._[0];
     if (parsed.version && this.version) {
+      console.log(this.version);
       return;
     };
 
@@ -185,8 +220,8 @@ class CommandBin {
       const Command = this.commands.get(commandName);
       const rawArgv = this.rawArgv.slice();
       rawArgv.splice(rawArgv.indexOf(commandName), 1);
-      console.log('Command', Command, rawArgv);
 
+      // @ts-ignore
       debug('[%s] dispatch to subcommand `%s` -> `%s` with %j', this.constructor.name, commandName, Command.name, rawArgv);
       const command = this.getSubCommandInstance(Command, rawArgv);
       await command.dispatch();
@@ -198,12 +233,14 @@ class CommandBin {
       // 定义应用暴露出来的命令
       // 参数：cmd ，必须是一个字符串类型命令名称，或者是一个数组，数组的类型是字符串，代表是命令的名称或者命令的别名
       // 参数: desc，用来描述命令是作什么用的， 如果设置 desc 的值为 false，则会创建一个隐藏的指令
-      this.yargs.command(name, Command.prototype.description || '');
+      // @ts-ignore
+      this.yargs.command(name, Command.prototype?.description || '');
     }
 
     debug('[%s] exec run command', this.constructor.name);
 
     const context = this.context;
+    // print completion for bash 用于支持命名行自动补全提示
     if (context.argv.AUTO_COMPLETIONS) {
       this.yargs.getCompletion(this.rawArgv.slice(1), (completions: any) => {
           console.log('%s', completions)
@@ -224,10 +261,14 @@ class CommandBin {
     return new Command(rawArgv)
   }
 
-  private parse(rawArgv: string[]): any {
+  private parse(rawArgv: string[]): Promise<any> {
     return new Promise((resolve, reject) => {
       this.yargs.parse(rawArgv, (err: Error, argv: string) => {
         if (err) return reject(err);
+        // {
+        //   _: [ 'remote', 'add', 'gh://node-modules/common-bin' ],
+        //   '$0': 'my-git'
+        // }
         resolve(argv);
       })
     })

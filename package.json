@@ -44,6 +44,7 @@
   },
   "dependencies": {
     "chalk": "^4.0.0",
+    "change-case": "^4.1.2",
     "debug": "^4.3.4",
     "is-type-of": "^1.2.1",
     "yargs": "^17.4.1"

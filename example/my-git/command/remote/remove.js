@@ -1,8 +1,7 @@
 'use strict';
 
 const path = require('path');
-
-const Command = require('../../../build/index');
+const Command = require('../../../../build/index');
 
 class RemoteCommand extends Command {
   constructor(rawArgv) {
@@ -11,6 +10,14 @@ class RemoteCommand extends Command {
     this.load(path.join(__dirname, 'remote'));
     this.alias('rm', 'remove');
   }
-};
+
+  * run({ argv }) {
+    console.log('run remote command with %j', argv._);
+  }
+
+  get description() {
+    return 'Manage set of tracked repositories';
+  }
+}
 
 module.exports = RemoteCommand;
