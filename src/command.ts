@@ -5,6 +5,7 @@ const yargs = require('yargs');
 const assert = require('assert');
 const chalk = require('chalk');
 const fs = require('fs');
+const helper = require('./helper');
 
 interface IParseOptions {
   execArgv: boolean;
@@ -17,6 +18,7 @@ class CommandBin {
   private yargs;
   private parseOptions: IParseOptions;
   private commands: any;
+  private helper: any;
   private commandVersion: string = '';
   constructor(rawArgv: string[]) {
     // 获取有效的命令行参数，给yargs使用
@@ -30,7 +32,7 @@ class CommandBin {
       removeAlias: false,
       removeCamelCase: false,
     };
-
+    this.helper = helper;
     this.commands = new Map();
   }
 
@@ -58,6 +60,19 @@ class CommandBin {
 
   get version() {
     return this.commandVersion;
+  }
+
+  get context() {
+    // { _: [ 'test' ], '$0': 'bin/my-git.js' }
+    const argv = this.yargs.argv;
+
+    const context = {
+      argv,
+      cwd: process.cwd(),
+      env: Object.assign({}, process.env),
+      rawArgv: this.rawArgv
+    };
+    return context;
   }
 
   /**
@@ -121,7 +136,7 @@ class CommandBin {
    */
   private add(commandName: string, target: string) {
     assert(commandName, `${commandName} is required`);
-    if (typeof CommandBin === 'string') {
+    if (typeof target === 'string') {
       // target is file
       assert(fs.existsSync(target) && fs.statSync(target).isFile(), `${target} is not a file`);
       debug('[%s] add command `%s` from `%s`', this.constructor.name, commandName, target);
@@ -135,7 +150,7 @@ class CommandBin {
     };
     // 添加命名的映射
     this.commands.set(commandName, target);
-    console.log(this.commands);
+    console.log('add', this.commands);
   }
 
   private errorHandler(err: Error) {
@@ -158,10 +173,58 @@ class CommandBin {
       .group(['help', 'version'], 'Global Options:');
     
     const parsed = await this.parse(this.rawArgv);
-    console.log('parsed', parsed);
+    // example parsed { _: [ 'remote' ], '$0': 'bin/my-git.js' }
+    const commandName = parsed._[0];
+    if (parsed.version && this.version) {
+      return;
+    };
+
+    // if sub command exist
+    if (this.commands.has(commandName)) {
+      // 匹配对应 sub Command Class
+      const Command = this.commands.get(commandName);
+      const rawArgv = this.rawArgv.slice();
+      rawArgv.splice(rawArgv.indexOf(commandName), 1);
+      console.log('Command', Command, rawArgv);
+
+      debug('[%s] dispatch to subcommand `%s` -> `%s` with %j', this.constructor.name, commandName, Command.name, rawArgv);
+      const command = this.getSubCommandInstance(Command, rawArgv);
+      await command.dispatch();
+      return;
+    }
+
+    // 注册command
+    for (const [name, Command] of this.commands.entries()) {
+      // 定义应用暴露出来的命令
+      // 参数：cmd ，必须是一个字符串类型命令名称，或者是一个数组，数组的类型是字符串，代表是命令的名称或者命令的别名
+      // 参数: desc，用来描述命令是作什么用的， 如果设置 desc 的值为 false，则会创建一个隐藏的指令
+      this.yargs.command(name, Command.prototype.description || '');
+    }
+
+    debug('[%s] exec run command', this.constructor.name);
+
+    const context = this.context;
+    if (context.argv.AUTO_COMPLETIONS) {
+      this.yargs.getCompletion(this.rawArgv.slice(1), (completions: any) => {
+          console.log('%s', completions)
+          completions.forEach((x: any) => console.log(x));
+      })
+    } else {
+      // 执行run方法
+      await this.helper.callFn(this.run, [ context ], this);
+    }
   }
 
-  private parse(rawArgv: string[]) {
+  /**
+   * @param Command 
+   * @param rawArgv 
+   * @returns 初始化子command、返回实例
+   */
+  private getSubCommandInstance(Command: any, rawArgv: string[]) {
+    return new Command(rawArgv)
+  }
+
+  private parse(rawArgv: string[]): any {
     return new Promise((resolve, reject) => {
       this.yargs.parse(rawArgv, (err: Error, argv: string) => {
         if (err) return reject(err);

@@ -9,6 +9,7 @@ const yargs = require('yargs');
 const assert = require('assert');
 const chalk = require('chalk');
 const fs = require('fs');
+const helper = require('./helper');
 class CommandBin {
     constructor(rawArgv) {
         this.commandVersion = '';
@@ -20,6 +21,7 @@ class CommandBin {
             removeAlias: false,
             removeCamelCase: false,
         };
+        this.helper = helper;
         this.commands = new Map();
     }
     showHelp(level = 'log') {
@@ -36,6 +38,16 @@ class CommandBin {
     }
     get version() {
         return this.commandVersion;
+    }
+    get context() {
+        const argv = this.yargs.argv;
+        const context = {
+            argv,
+            cwd: process.cwd(),
+            env: Object.assign({}, process.env),
+            rawArgv: this.rawArgv
+        };
+        return context;
     }
     load(fullPath) {
         assert(fs.existsSync(fullPath) && fs.statSync(fullPath).isDirectory(), `${fullPath} should exist and be a directory`);
@@ -77,7 +89,7 @@ class CommandBin {
     }
     add(commandName, target) {
         assert(commandName, `${commandName} is required`);
-        if (typeof CommandBin === 'string') {
+        if (typeof target === 'string') {
             assert(fs.existsSync(target) && fs.statSync(target).isFile(), `${target} is not a file`);
             debug('[%s] add command `%s` from `%s`', this.constructor.name, commandName, target);
             target = require(target);
@@ -88,7 +100,7 @@ class CommandBin {
         }
         ;
         this.commands.set(commandName, target);
-        console.log(this.commands);
+        console.log('add', this.commands);
     }
     errorHandler(err) {
         console.error(chalk.red(`⚠️  ${err.name}: ${err.message}`));
@@ -107,7 +119,38 @@ class CommandBin {
             .alias('v', 'version')
             .group(['help', 'version'], 'Global Options:');
         const parsed = await this.parse(this.rawArgv);
-        console.log('parsed', parsed);
+        const commandName = parsed._[0];
+        if (parsed.version && this.version) {
+            return;
+        }
+        ;
+        if (this.commands.has(commandName)) {
+            const Command = this.commands.get(commandName);
+            const rawArgv = this.rawArgv.slice();
+            rawArgv.splice(rawArgv.indexOf(commandName), 1);
+            console.log('Command', Command, rawArgv);
+            debug('[%s] dispatch to subcommand `%s` -> `%s` with %j', this.constructor.name, commandName, Command.name, rawArgv);
+            const command = this.getSubCommandInstance(Command, rawArgv);
+            await command.dispatch();
+            return;
+        }
+        for (const [name, Command] of this.commands.entries()) {
+            this.yargs.command(name, Command.prototype.description || '');
+        }
+        debug('[%s] exec run command', this.constructor.name);
+        const context = this.context;
+        if (context.argv.AUTO_COMPLETIONS) {
+            this.yargs.getCompletion(this.rawArgv.slice(1), (completions) => {
+                console.log('%s', completions);
+                completions.forEach((x) => console.log(x));
+            });
+        }
+        else {
+            await this.helper.callFn(this.run, [context], this);
+        }
+    }
+    getSubCommandInstance(Command, rawArgv) {
+        return new Command(rawArgv);
     }
     parse(rawArgv) {
         return new Promise((resolve, reject) => {
